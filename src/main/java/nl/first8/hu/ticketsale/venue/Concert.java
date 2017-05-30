@@ -6,6 +6,8 @@ import lombok.NoArgsConstructor;
 
 import javax.persistence.*;
 import java.io.Serializable;
+import java.util.Date;
+
 @Entity
 @Data
 @NoArgsConstructor
@@ -16,6 +18,9 @@ public class Concert implements Serializable {
     @GeneratedValue
     private Long id;
 
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date date;
+
     @OneToOne
     @JoinColumn(name="artist_id", referencedColumnName = "id")
     private Artist artist;
@@ -24,4 +29,20 @@ public class Concert implements Serializable {
     @JoinColumn(name = "location_id", referencedColumnName = "id")
     private Location location;
 
+    public Concert (Long id, Artist artist, Location location){
+        this.id = id;
+        this.artist = artist;
+        this.location = location;
+    }
+
+    public Concert(Date date, Artist artist, Location location) {
+        this.date = date;
+        this.artist = artist;
+        this.location = location;
+    }
+
+    public boolean equals(Concert concert){
+        return this.id == concert.id || (this.date == concert.date && this.artist == concert.artist && this.location
+                == concert.location);
+    }
 }

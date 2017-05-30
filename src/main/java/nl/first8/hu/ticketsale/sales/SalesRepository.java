@@ -1,15 +1,21 @@
 package nl.first8.hu.ticketsale.sales;
 
 import nl.first8.hu.ticketsale.registration.Account;
+import org.hibernate.validator.internal.metadata.core.AnnotationProcessingOptionsImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
+import javax.annotation.Resource;
 import javax.persistence.EntityExistsException;
 import javax.persistence.EntityManager;
 import javax.persistence.TypedQuery;
 import java.util.List;
 import java.util.Optional;
 import javax.persistence.NoResultException;
+import javax.transaction.NotSupportedException;
+import javax.transaction.SystemException;
+import javax.transaction.Transactional;
+import javax.transaction.UserTransaction;
 
 @Repository
 public class SalesRepository {
@@ -32,9 +38,15 @@ public class SalesRepository {
         entityManager.persist(ticket);
     }
 
+    @Transactional
     public void insert(final Sale sale) {
-        insert(new AuditTrail(sale));
-        entityManager.persist(sale);
+        try {
+            Sale newSale = entityManager.merge(sale);
+            insert(new AuditTrail(newSale));
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
     }
 
     public void insert(final AuditTrail auditTrail) { entityManager.persist(auditTrail); }

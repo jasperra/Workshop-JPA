@@ -53,7 +53,7 @@ public class RegistrationIntegrationTest {
 
     @Before
     public void cleanDatabase() {
-        JdbcTestUtils.deleteFromTables(jdbcTemplate, "ticket", "account", "account_info");
+        JdbcTestUtils.deleteFromTables(jdbcTemplate, "audit_trail", "ticket", "account", "account_info");
     }
 
     @Test

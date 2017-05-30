@@ -1,10 +1,11 @@
-package nl.first8.hu.ticketsale.sales;
+package nl.first8.hu.ticketsale.venue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.first8.hu.ticketsale.registration.Account;
+import nl.first8.hu.ticketsale.sales.Ticket;
+import nl.first8.hu.ticketsale.sales.TicketDto;
 import nl.first8.hu.ticketsale.util.TestRepository;
-import nl.first8.hu.ticketsale.venue.Concert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -20,38 +21,44 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import javax.persistence.EntityManager;
+import javax.transaction.Transactional;
 import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
-import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-import static org.mockito.Matchers.isNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * Created by Jasper on 28-May-17.
+ */
+
 @RunWith(SpringRunner.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @Rollback(false)
-public class TicketRepositoryIntegrationTest {
+public class VenueIntegrationTest {
 
     @Autowired
     private MockMvc mvc;
 
     @Autowired
-    private TestRepository testRepository;
+    private EntityManager entityManager;
 
     @Autowired
     private ObjectMapper objectMapper;
 
     @Autowired
-    private EntityManager entityManager;
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private TestRepository testRepository;
 
     @Before
     public void cleanDatabase() {
@@ -59,21 +66,33 @@ public class TicketRepositoryIntegrationTest {
     }
 
     @Test
-    public void testInsertTicket() throws Exception {
+    @Transactional()
+    public void testGetSearchResult() throws Exception{
+        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd");
 
-        Account account = testRepository.createDefaultAccount("f.dejong@first8.nl");
-        Concert concert = testRepository.createDefaultConcert("Parov Stellar", "Utrecht");
+        Artist artistGorillaz = entityManager.merge(new Artist("Gorillaz", Genre.electronica));
+        Artist artistMetallica = entityManager.merge(new Artist("Metallica", Genre.metal));
 
+        Location locationArnhem = entityManager.merge(new Location("Arnhem", new ArrayList<>()));
+        Location locationAmsterdam = entityManager.merge(new Location("Amsterdam", new ArrayList<>()));
 
-        mvc.perform(
-                post("/sales/ticket").param("account_id", account.getId().toString()).param("concert_id", concert.getId().toString())
-                        .accept(MediaType.APPLICATION_JSON)
-        ).andExpect(status().isOk());
+        entityManager.persist(new Concert(new Date(), artistGorillaz, locationArnhem));
+        entityManager.persist(new Concert(new Date(), artistMetallica, locationAmsterdam));
 
+        MvcResult result = mvc.perform(
+                post("/venue/search")
+                        .param("artistName", "Metallica")
+                        .param("genre","metal")
+                        .param("minDateConcert", dateFormat.format(new Date(0, 1, 1)))
+                        .param("location", "Amsterdam")
+                    .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON_UTF8))
+                .andReturn();
 
-        final Ticket ticket = testRepository.findTicket(concert, account);
-        assertThat(ticket.getConcert().getArtist(), is(concert.getArtist()));
-        assertThat(ticket.getConcert().getLocation().getName(), is(concert.getLocation().getName()));
+        List<Concert> concerts = readConcertsReponse(result);
+        assertEquals(1, concerts.size());
+        assertEquals(artistMetallica, concerts.get(0));
     }
 
     @Test
@@ -98,54 +117,6 @@ public class TicketRepositoryIntegrationTest {
         assertEquals(ticketGorillaz.getConcert().getLocation().getName(), actualTickets.get(0).getLocation());
         assertEquals(ticketThieveryCo.getConcert().getArtist().getName(), actualTickets.get(1).getArtist());
         assertEquals(ticketGorillaz.getConcert().getLocation().getName(), actualTickets.get(0).getLocation());
-
-
-    }
-
-    @Test
-    public void testInsertSale() throws Exception {
-
-        Account account = testRepository.createDefaultAccount("t.poll@first8.nl");
-        Concert concert = testRepository.createDefaultConcert("Disturbed", "Verdedig, Enschede");
-
-        MvcResult result = mvc.perform(
-                post("/sales/")
-                        .param("account_id", account.getId().toString())
-                        .param("concert_id", concert.getId().toString())
-                        .param("price", Integer.toString(4500))
-        ).andExpect(status().isOk()).andReturn();
-
-        Long saleId = readSaleResult(result);
-
-
-        Ticket createdTicket = entityManager.find(Ticket.class, new TicketId(concert, account));
-        Sale createdSale = entityManager.find(Sale.class, saleId);
-
-        assertThat(createdSale.getTicket().getAccount().getId(), is(account.getId()));
-        assertThat(createdSale.getTicket().getConcert().getId(), is(createdTicket.getConcert().getId()));
-    }
-
-    @Test
-    public void testInsertSaleWithoutPayment() throws Exception {
-
-        Account account = testRepository.createDefaultAccount("t.poll@first8.nl");
-        Concert concert = testRepository.createDefaultConcert("Disturbed", "Verdedig, Enschede");
-
-        mvc.perform(
-                post("/sales/")
-                        .param("account_id", account.getId().toString())
-                        .param("concert_id", concert.getId().toString())
-                        .param("price", Integer.toString(0))
-        ).andExpect(status().isConflict());
-
-
-        Ticket createdTicket = entityManager.find(Ticket.class, new TicketId(concert, account));
-        assertThat(createdTicket, is(isNull()));
-
-    }
-
-    private Long readSaleResult(MvcResult result) throws IOException {
-        return objectMapper.readValue(result.getResponse().getContentAsString(), Long.class);
     }
 
     private List<TicketDto> readTicketsResponse(MvcResult result) throws IOException {
@@ -153,5 +124,8 @@ public class TicketRepositoryIntegrationTest {
         });
     }
 
-
+    private List<Concert> readConcertsReponse(MvcResult result) throws IOException {
+        return objectMapper.readValue(result.getResponse().getContentAsString(), new TypeReference<List<Concert>>() {
+        });
+    }
 }
